@@ -405,6 +405,45 @@ final class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class PillButton: NSButton {
+    override var title: String {
+        didSet { applyVisibleStyle() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        isBordered = false
+        wantsLayer = true
+        font = .systemFont(ofSize: 11, weight: .semibold)
+        setButtonType(.momentaryPushIn)
+        layer?.cornerRadius = 7
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.26).cgColor
+        contentTintColor = .white
+        applyVisibleStyle()
+    }
+
+    private func applyVisibleStyle() {
+        attributedTitle = NSAttributedString(
+            string: title,
+            attributes: [
+                .foregroundColor: NSColor.white,
+                .font: font ?? NSFont.systemFont(ofSize: 11, weight: .semibold)
+            ]
+        )
+    }
+}
+
 final class OverlayView: NSView {
     var onToggle: (() -> Void)?
     var onEditTask: (() -> Void)?
@@ -415,11 +454,11 @@ final class OverlayView: NSView {
     private let taskLabel = NSTextField(labelWithString: "Choose a task")
     private let timerLabel = NSTextField(labelWithString: "25:00")
     private let modeLabel = NSTextField(labelWithString: "Focus")
-    private let toggleButton = NSButton(title: "Pause", target: nil, action: nil)
-    private let editButton = NSButton(title: "Task", target: nil, action: nil)
-    private let lengthButton = NSButton(title: "Length", target: nil, action: nil)
-    private let resetButton = NSButton(title: "Reset", target: nil, action: nil)
-    private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
+    private let toggleButton = PillButton(title: "Pause", target: nil, action: nil)
+    private let editButton = PillButton(title: "Task", target: nil, action: nil)
+    private let lengthButton = PillButton(title: "Length", target: nil, action: nil)
+    private let resetButton = PillButton(title: "Reset", target: nil, action: nil)
+    private let quitButton = PillButton(title: "Quit", target: nil, action: nil)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -452,10 +491,8 @@ final class OverlayView: NSView {
         modeLabel.textColor = NSColor.white.withAlphaComponent(0.72)
 
         [toggleButton, editButton, lengthButton, resetButton, quitButton].forEach { button in
-            button.bezelStyle = .rounded
-            button.font = .systemFont(ofSize: 11, weight: .medium)
-            button.setButtonType(.momentaryPushIn)
             button.translatesAutoresizingMaskIntoConstraints = false
+            button.heightAnchor.constraint(equalToConstant: 24).isActive = true
         }
         toggleButton.target = self
         toggleButton.action = #selector(toggle)
