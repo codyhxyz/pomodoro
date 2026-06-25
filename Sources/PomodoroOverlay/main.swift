@@ -12,8 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlayView: OverlayView!
     private var tickTimer: Timer?
     private var alarmTimer: Timer?
+    private var idleReminderTimer: Timer?
     private var isAlarmRinging = false
+    private var isPromptVisible = false
     private let alarmSound = NSSound(named: NSSound.Name("Glass"))
+    private let idleReminderInterval: TimeInterval = 5 * 60
 
     private var currentTask: String {
         get {
@@ -60,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isRunning = false
         updateUI()
         showOverlay()
+        resetIdleReminderCountdown()
 
         if !hasCurrentTask {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
@@ -71,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         tickTimer?.invalidate()
         alarmTimer?.invalidate()
+        idleReminderTimer?.invalidate()
     }
 
     private func buildStatusMenu() {
@@ -174,7 +179,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alarmTimer = nil
         alarmSound?.stop()
         isAlarmRinging = false
+        resetIdleReminderCountdown()
         updateUI()
+    }
+
+    private func resetIdleReminderCountdown() {
+        idleReminderTimer?.invalidate()
+        idleReminderTimer = Timer.scheduledTimer(withTimeInterval: idleReminderInterval, repeats: false) { [weak self] _ in
+            self?.showIdleReminderIfNeeded()
+        }
+        RunLoop.main.add(idleReminderTimer!, forMode: .common)
+    }
+
+    private func showIdleReminderIfNeeded() {
+        defer { resetIdleReminderCountdown() }
+        guard !isRunning, !isAlarmRinging, !isPromptVisible else { return }
+
+        NSSound.beep()
+
+        isPromptVisible = true
+        let alert = NSAlert()
+        alert.messageText = "Start a Pomodoro?"
+        alert.informativeText = "No timer is running. Do you want to start one now?"
+        alert.addButton(withTitle: "Start Timer")
+        alert.addButton(withTitle: "Later")
+
+        NSApp.activate(ignoringOtherApps: true)
+        let result = alert.runModal()
+        isPromptVisible = false
+
+        if result == .alertFirstButtonReturn {
+            startCurrentTimer()
+        }
     }
 
     private func tick() {
@@ -197,6 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         isRunning = false
         stopTicker()
+        resetIdleReminderCountdown()
     }
 
     private func startFocus() {
@@ -230,6 +267,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func promptForCurrentTask() -> Bool {
+        isPromptVisible = true
+        defer { isPromptVisible = false }
+
         let alert = NSAlert()
         alert.messageText = "Current task"
         alert.informativeText = "This task stays visible in the bottom-right corner above your other windows."
@@ -275,6 +315,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func promptForMinutes(title: String, message: String, currentValue: Int) -> Int? {
+        isPromptVisible = true
+        defer { isPromptVisible = false }
+
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
@@ -300,17 +343,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if isRunning {
             isRunning = false
             stopTicker()
+            resetIdleReminderCountdown()
+            updateUI()
         } else {
-            if !hasCurrentTask, !promptForCurrentTask() {
-                updateUI()
-                return
-            }
-            if remainingSeconds <= 0 {
-                remainingSeconds = mode == .focus ? focusSeconds : breakSeconds
-            }
-            isRunning = true
-            startTickerIfNeeded()
+            startCurrentTimer()
         }
+    }
+
+    private func startCurrentTimer() {
+        if !hasCurrentTask, !promptForCurrentTask() {
+            updateUI()
+            return
+        }
+        if remainingSeconds <= 0 {
+            remainingSeconds = mode == .focus ? focusSeconds : breakSeconds
+        }
+        isRunning = true
+        startTickerIfNeeded()
         updateUI()
     }
 
@@ -320,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remainingSeconds = focusSeconds
         isRunning = false
         stopTicker()
+        resetIdleReminderCountdown()
         updateUI()
     }
 
