@@ -11,6 +11,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panel: NSPanel!
     private var overlayView: OverlayView!
     private var tickTimer: Timer?
+    private var alarmTimer: Timer?
+    private var isAlarmRinging = false
+    private let alarmSound = NSSound(named: NSSound.Name("Glass"))
 
     private var currentTask: String {
         get {
@@ -67,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         tickTimer?.invalidate()
+        alarmTimer?.invalidate()
     }
 
     private func buildStatusMenu() {
@@ -80,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Set Break Length…", action: #selector(setBreakLength), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Start / Pause", action: #selector(toggleStartPause), keyEquivalent: " "))
+        menu.addItem(NSMenuItem(title: "Stop Alarm", action: #selector(stopAlarmFromMenu), keyEquivalent: "s"))
         menu.addItem(NSMenuItem(title: "Reset Focus", action: #selector(resetFocus), keyEquivalent: "r"))
         menu.addItem(NSMenuItem(title: "Start Break", action: #selector(startBreakFromMenu), keyEquivalent: "b"))
         menu.addItem(NSMenuItem.separator())
@@ -143,6 +148,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tickTimer = nil
     }
 
+    private func startAlarm() {
+        guard alarmTimer == nil else { return }
+        isAlarmRinging = true
+        playAlarmOnce()
+        alarmTimer = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in
+            self?.playAlarmOnce()
+        }
+        RunLoop.main.add(alarmTimer!, forMode: .common)
+    }
+
+    private func playAlarmOnce() {
+        if let alarmSound {
+            if alarmSound.isPlaying {
+                alarmSound.stop()
+            }
+            alarmSound.play()
+        } else {
+            NSSound.beep()
+        }
+    }
+
+    private func stopAlarm() {
+        alarmTimer?.invalidate()
+        alarmTimer = nil
+        alarmSound?.stop()
+        isAlarmRinging = false
+        updateUI()
+    }
+
     private func tick() {
         guard isRunning else { return }
         remainingSeconds = max(0, remainingSeconds - 1)
@@ -153,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishSession() {
-        NSSound.beep()
+        startAlarm()
         if mode == .focus {
             mode = .shortBreak
             remainingSeconds = breakSeconds
@@ -185,8 +219,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let minutes = remainingSeconds / 60
         let seconds = remainingSeconds % 60
         let time = String(format: "%02d:%02d", minutes, seconds)
-        overlayView.update(task: currentTask, mode: mode.rawValue, time: time, isRunning: isRunning)
-        statusItem.button?.title = "🍅 \(time)"
+        overlayView.update(task: currentTask, mode: mode.rawValue, time: time, isRunning: isRunning, isAlarmRinging: isAlarmRinging)
+        statusItem.button?.title = isAlarmRinging ? "🔔 \(time)" : "🍅 \(time)"
         positionOverlay()
         panel.orderFrontRegardless()
     }
@@ -258,6 +292,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleStartPause() {
+        if isAlarmRinging {
+            stopAlarm()
+            return
+        }
+
         if isRunning {
             isRunning = false
             stopTicker()
@@ -276,6 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func resetFocus() {
+        if isAlarmRinging { stopAlarm() }
         mode = .focus
         remainingSeconds = focusSeconds
         isRunning = false
@@ -283,7 +323,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateUI()
     }
 
+    @objc private func stopAlarmFromMenu() {
+        stopAlarm()
+    }
+
     @objc private func startBreakFromMenu() {
+        if isAlarmRinging { stopAlarm() }
         startBreak()
     }
 
@@ -394,11 +439,16 @@ final class OverlayView: NSView {
         ])
     }
 
-    func update(task: String, mode: String, time: String, isRunning: Bool) {
+    func update(task: String, mode: String, time: String, isRunning: Bool, isAlarmRinging: Bool) {
         taskLabel.stringValue = task
-        modeLabel.stringValue = isRunning ? mode : "Paused • \(mode)"
+        if isAlarmRinging {
+            modeLabel.stringValue = "Alarm • \(mode)"
+            toggleButton.title = "Stop Alarm"
+        } else {
+            modeLabel.stringValue = isRunning ? mode : "Paused • \(mode)"
+            toggleButton.title = isRunning ? "Pause" : "Start"
+        }
         timerLabel.stringValue = time
-        toggleButton.title = isRunning ? "Pause" : "Start"
     }
 
     @objc private func toggle() { onToggle?() }
