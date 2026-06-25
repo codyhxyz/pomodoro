@@ -8,6 +8,7 @@ private enum SessionMode: String {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaults = UserDefaults.standard
     private var statusItem: NSStatusItem!
+    private var statusMenu: NSMenu!
     private var panel: NSPanel!
     private var overlayView: OverlayView!
     private var tickTimer: Timer?
@@ -83,27 +84,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.title = "🍅"
         statusItem.button?.toolTip = "Pomodoro Overlay"
 
-        let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Set Current Task…", action: #selector(setCurrentTask), keyEquivalent: "t"))
-        menu.addItem(NSMenuItem(title: "Set Focus Length…", action: #selector(setFocusLength), keyEquivalent: "l"))
-        menu.addItem(NSMenuItem(title: "Set Break Length…", action: #selector(setBreakLength), keyEquivalent: ""))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Start / Pause", action: #selector(toggleStartPause), keyEquivalent: " "))
-        menu.addItem(NSMenuItem(title: "Stop Alarm", action: #selector(stopAlarmFromMenu), keyEquivalent: "s"))
-        menu.addItem(NSMenuItem(title: "Reset Focus", action: #selector(resetFocus), keyEquivalent: "r"))
-        menu.addItem(NSMenuItem(title: "Start Break", action: #selector(startBreakFromMenu), keyEquivalent: "b"))
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Show Overlay", action: #selector(showOverlay), keyEquivalent: "o"))
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
-        statusItem.menu = menu
+        statusMenu = NSMenu()
+        addMenuItem(title: "Set Current Task…", action: #selector(setCurrentTask), keyEquivalent: "t")
+        addMenuItem(title: "Set Focus Length…", action: #selector(setFocusLength), keyEquivalent: "l")
+        addMenuItem(title: "Set Break Length…", action: #selector(setBreakLength), keyEquivalent: "")
+        statusMenu.addItem(NSMenuItem.separator())
+        addMenuItem(title: "Start / Pause", action: #selector(toggleStartPause), keyEquivalent: " ")
+        addMenuItem(title: "Stop Alarm", action: #selector(stopAlarmFromMenu), keyEquivalent: "s")
+        addMenuItem(title: "Reset Focus", action: #selector(resetFocus), keyEquivalent: "r")
+        addMenuItem(title: "Start Break", action: #selector(startBreakFromMenu), keyEquivalent: "b")
+        statusMenu.addItem(NSMenuItem.separator())
+        addMenuItem(title: "Show Overlay", action: #selector(showOverlay), keyEquivalent: "o")
+        addMenuItem(title: "Quit Pomodoro Overlay", action: #selector(quit), keyEquivalent: "q")
+        statusItem.menu = statusMenu
+    }
+
+    private func addMenuItem(title: String, action: Selector, keyEquivalent: String) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        statusMenu.addItem(item)
     }
 
     private func buildOverlay() {
-        overlayView = OverlayView(frame: NSRect(x: 0, y: 0, width: 330, height: 112))
+        overlayView = OverlayView(frame: NSRect(x: 0, y: 0, width: 390, height: 112))
         overlayView.onToggle = { [weak self] in self?.toggleStartPause() }
         overlayView.onEditTask = { [weak self] in self?.setCurrentTask() }
         overlayView.onSetLength = { [weak self] in self?.setFocusLength() }
         overlayView.onReset = { [weak self] in self?.resetFocus() }
+        overlayView.onQuit = { [weak self] in self?.quit() }
 
         panel = OverlayPanel(
             contentRect: overlayView.bounds,
@@ -402,6 +410,7 @@ final class OverlayView: NSView {
     var onEditTask: (() -> Void)?
     var onSetLength: (() -> Void)?
     var onReset: (() -> Void)?
+    var onQuit: (() -> Void)?
 
     private let taskLabel = NSTextField(labelWithString: "Choose a task")
     private let timerLabel = NSTextField(labelWithString: "25:00")
@@ -410,6 +419,7 @@ final class OverlayView: NSView {
     private let editButton = NSButton(title: "Task", target: nil, action: nil)
     private let lengthButton = NSButton(title: "Length", target: nil, action: nil)
     private let resetButton = NSButton(title: "Reset", target: nil, action: nil)
+    private let quitButton = NSButton(title: "Quit", target: nil, action: nil)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -441,7 +451,7 @@ final class OverlayView: NSView {
         modeLabel.font = .systemFont(ofSize: 12, weight: .medium)
         modeLabel.textColor = NSColor.white.withAlphaComponent(0.72)
 
-        [toggleButton, editButton, lengthButton, resetButton].forEach { button in
+        [toggleButton, editButton, lengthButton, resetButton, quitButton].forEach { button in
             button.bezelStyle = .rounded
             button.font = .systemFont(ofSize: 11, weight: .medium)
             button.setButtonType(.momentaryPushIn)
@@ -455,6 +465,8 @@ final class OverlayView: NSView {
         lengthButton.action = #selector(setLength)
         resetButton.target = self
         resetButton.action = #selector(reset)
+        quitButton.target = self
+        quitButton.action = #selector(quit)
 
         let headerStack = NSStackView(views: [taskLabel])
         headerStack.orientation = .horizontal
@@ -467,7 +479,7 @@ final class OverlayView: NSView {
         timerStack.spacing = 10
         timerStack.translatesAutoresizingMaskIntoConstraints = false
 
-        let buttonStack = NSStackView(views: [toggleButton, editButton, lengthButton, resetButton])
+        let buttonStack = NSStackView(views: [toggleButton, editButton, lengthButton, resetButton, quitButton])
         buttonStack.orientation = .horizontal
         buttonStack.alignment = .centerY
         buttonStack.spacing = 6
@@ -485,8 +497,14 @@ final class OverlayView: NSView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12),
-            taskLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 298)
+            taskLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 358)
         ])
+
+        let contextMenu = NSMenu()
+        let quitItem = NSMenuItem(title: "Quit Pomodoro Overlay", action: #selector(quitFromContextMenu), keyEquivalent: "")
+        quitItem.target = self
+        contextMenu.addItem(quitItem)
+        menu = contextMenu
     }
 
     func update(task: String, mode: String, time: String, isRunning: Bool, isAlarmRinging: Bool) {
@@ -505,6 +523,8 @@ final class OverlayView: NSView {
     @objc private func editTask() { onEditTask?() }
     @objc private func setLength() { onSetLength?() }
     @objc private func reset() { onReset?() }
+    @objc private func quit() { onQuit?() }
+    @objc private func quitFromContextMenu() { onQuit?() }
 }
 
 @main
