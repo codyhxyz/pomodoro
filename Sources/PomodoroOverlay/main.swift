@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let defaults = UserDefaults.standard
     private var statusItem: NSStatusItem!
     private var statusMenu: NSMenu!
+    private var toggleOverlayMenuItem: NSMenuItem!
     private var panel: NSPanel!
     private var overlayView: OverlayView!
     private var tickTimer: Timer?
@@ -16,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var idleReminderTimer: Timer?
     private var isAlarmRinging = false
     private var isPromptVisible = false
+    private var isOverlayVisible = true
     private let alarmSound = NSSound(named: NSSound.Name("Glass"))
     private let idleReminderInterval: TimeInterval = 5 * 60
 
@@ -94,15 +96,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addMenuItem(title: "Reset Focus", action: #selector(resetFocus), keyEquivalent: "r")
         addMenuItem(title: "Start Break", action: #selector(startBreakFromMenu), keyEquivalent: "b")
         statusMenu.addItem(NSMenuItem.separator())
-        addMenuItem(title: "Show Overlay", action: #selector(showOverlay), keyEquivalent: "o")
+        toggleOverlayMenuItem = addMenuItem(title: "Hide Overlay", action: #selector(toggleOverlay), keyEquivalent: "o")
         addMenuItem(title: "Quit Pomodoro Overlay", action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = statusMenu
     }
 
-    private func addMenuItem(title: String, action: Selector, keyEquivalent: String) {
+    @discardableResult
+    private func addMenuItem(title: String, action: Selector, keyEquivalent: String) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         item.target = self
         statusMenu.addItem(item)
+        return item
     }
 
     private func buildOverlay() {
@@ -191,8 +195,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateUI()
     }
 
-    private func resetIdleReminderCountdown() {
+    private func pauseIdleReminderCountdown() {
         idleReminderTimer?.invalidate()
+        idleReminderTimer = nil
+    }
+
+    private func resetIdleReminderCountdown() {
+        pauseIdleReminderCountdown()
+        guard isOverlayVisible, !isRunning, !isAlarmRinging else { return }
+
         idleReminderTimer = Timer.scheduledTimer(withTimeInterval: idleReminderInterval, repeats: false) { [weak self] _ in
             self?.showIdleReminderIfNeeded()
         }
@@ -201,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showIdleReminderIfNeeded() {
         defer { resetIdleReminderCountdown() }
-        guard !isRunning, !isAlarmRinging, !isPromptVisible else { return }
+        guard isOverlayVisible, !isRunning, !isAlarmRinging, !isPromptVisible else { return }
 
         NSSound.beep()
 
@@ -248,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mode = .focus
         remainingSeconds = focusSeconds
         isRunning = true
+        pauseIdleReminderCountdown()
         startTickerIfNeeded()
         updateUI()
     }
@@ -256,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mode = .shortBreak
         remainingSeconds = breakSeconds
         isRunning = true
+        pauseIdleReminderCountdown()
         startTickerIfNeeded()
         updateUI()
     }
@@ -266,8 +279,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let time = String(format: "%02d:%02d", minutes, seconds)
         overlayView.update(task: currentTask, mode: mode.rawValue, time: time, isRunning: isRunning, isAlarmRinging: isAlarmRinging)
         statusItem.button?.title = isAlarmRinging ? "🔔 \(time)" : "🍅 \(time)"
-        positionOverlay()
-        panel.orderFrontRegardless()
+        if isOverlayVisible {
+            positionOverlay()
+            panel.orderFrontRegardless()
+        }
     }
 
     @objc private func setCurrentTask() {
@@ -367,6 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             remainingSeconds = mode == .focus ? focusSeconds : breakSeconds
         }
         isRunning = true
+        pauseIdleReminderCountdown()
         startTickerIfNeeded()
         updateUI()
     }
@@ -390,9 +406,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startBreak()
     }
 
+    @objc private func toggleOverlay() {
+        if isOverlayVisible {
+            hideOverlay()
+        } else {
+            showOverlay()
+        }
+    }
+
     @objc private func showOverlay() {
+        isOverlayVisible = true
+        toggleOverlayMenuItem?.title = "Hide Overlay"
         positionOverlay()
         panel.orderFrontRegardless()
+        resetIdleReminderCountdown()
+    }
+
+    private func hideOverlay() {
+        isOverlayVisible = false
+        toggleOverlayMenuItem?.title = "Show Overlay"
+        panel.orderOut(nil)
+        pauseIdleReminderCountdown()
     }
 
     @objc private func quit() {
