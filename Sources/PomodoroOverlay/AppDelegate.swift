@@ -140,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         overlayView.onSetMinutes = { [weak self] in self?.setLength(minutes: $0) }
         overlayView.onSkipBreak = { [weak self] in self?.skipBreak() }
+        overlayView.onReset = { [weak self] in self?.resetCurrentSession() }
         overlayView.onQuit = { [weak self] in self?.quit() }
 
         panel = OverlayPanel(
@@ -332,7 +333,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let minutes = remainingSeconds / 60
         let seconds = remainingSeconds % 60
         let time = String(format: "%02d:%02d", minutes, seconds)
-        overlayView.update(task: currentTask, mode: mode.rawValue, time: time, isRunning: isRunning, isAlarmRinging: isAlarmRinging)
+        let fullLength = mode == .focus ? focusSeconds : breakSeconds
+        overlayView.update(task: currentTask, mode: mode.rawValue, time: time, isRunning: isRunning,
+                           isInProgress: isRunning || remainingSeconds != fullLength)
         statusItem.button?.title = isAlarmRinging ? "🔔 \(time)" : "🍅 \(time)"
         if isOverlayVisible {
             positionOverlay()
@@ -397,6 +400,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         remainingSeconds = focusSeconds
         isRunning = false
         stopTicker()
+        resetIdleReminderCountdown()
+        updateUI()
+    }
+
+    /// Puts the current focus or break back to its full length, paused.
+    private func resetCurrentSession() {
+        if mode == .focus, !confirmEndingFocusEarly() { return }
+        isRunning = false
+        stopTicker()
+        remainingSeconds = mode == .focus ? focusSeconds : breakSeconds
+        if mode == .focus { focusStartedAt = nil }
         resetIdleReminderCountdown()
         updateUI()
     }
@@ -517,6 +531,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     var currentMinutes: (() -> Int)?
     var onSetMinutes: ((Int) -> Void)?
     var onSkipBreak: (() -> Void)?
+    var onReset: (() -> Void)?
     var onQuit: (() -> Void)?
 
     private let taskLabel = NSTextField(labelWithString: "What are you working on?")
@@ -526,6 +541,10 @@ final class OverlayView: NSView, NSTextFieldDelegate {
     private let modeLabel = NSTextField(labelWithString: "")
     private let toggleButton = PillButton(title: "Start", target: nil, action: nil)
     private let skipButton = PillButton(title: "Skip", target: nil, action: nil)
+    private let resetButton = NSButton(
+        image: NSImage(systemSymbolName: "arrow.counterclockwise", accessibilityDescription: "Reset")!,
+        target: nil, action: nil
+    )
 
     /// The label currently swapped out for its edit field, and what to do with the result.
     private var activeEdit: (label: NSTextField, field: NSTextField, commit: (String) -> Void)?
@@ -578,10 +597,17 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         skipButton.action = #selector(skipBreak)
         skipButton.toolTip = "Skip break"
 
+        resetButton.isBordered = false
+        resetButton.contentTintColor = NSColor.white.withAlphaComponent(0.6)
+        resetButton.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        resetButton.target = self
+        resetButton.action = #selector(reset)
+        resetButton.toolTip = "Reset"
+
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let row = NSStackView(views: [timerLabel, minutesField, modeLabel, spacer, skipButton, toggleButton])
+        let row = NSStackView(views: [timerLabel, minutesField, modeLabel, spacer, resetButton, skipButton, toggleButton])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 6
@@ -623,11 +649,12 @@ final class OverlayView: NSView, NSTextFieldDelegate {
         field.translatesAutoresizingMaskIntoConstraints = false
     }
 
-    func update(task: String, mode: String, time: String, isRunning: Bool, isAlarmRinging: Bool) {
+    func update(task: String, mode: String, time: String, isRunning: Bool, isInProgress: Bool) {
         taskLabel.stringValue = task
         modeLabel.stringValue = mode == "Focus" ? "" : mode
         modeLabel.isHidden = modeLabel.stringValue.isEmpty
         skipButton.isHidden = mode == "Focus"
+        resetButton.isHidden = !isInProgress
         toggleButton.title = isRunning ? "Pause" : "Start"
         timerLabel.stringValue = time
     }
@@ -674,6 +701,7 @@ final class OverlayView: NSView, NSTextFieldDelegate {
 
     @objc private func toggle() { onToggle?() }
     @objc private func skipBreak() { onSkipBreak?() }
+    @objc private func reset() { onReset?() }
     @objc private func quit() { onQuit?() }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
