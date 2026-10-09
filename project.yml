@@ -1,0 +1,36 @@
+# Source of truth for PomodoroOverlay.xcodeproj. Regenerate with `make project`.
+name: PomodoroOverlay
+options:
+  bundleIdPrefix: xyz.codyh
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: DV6HKHC773
+    MARKETING_VERSION: 0.2.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: "5.0"
+targets:
+  PomodoroOverlay:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/PomodoroOverlay
+    settings:
+      base:
+        PRODUCT_NAME: Pomodoro Overlay
+        PRODUCT_BUNDLE_IDENTIFIER: xyz.codyh.PomodoroOverlay
+        INFOPLIST_FILE: Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Resources/PomodoroOverlay.entitlements
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        SUPPORTED_PLATFORMS: macosx
+        COMBINE_HIDPI_IMAGES: YES
+schemes:
+  PomodoroOverlay:
+    build:
+      targets:
+        PomodoroOverlay: all
+    archive:
+      config: Release
